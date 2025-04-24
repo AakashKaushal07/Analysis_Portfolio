@@ -1,0 +1,35 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}My Project{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'base_app/css/style.css' %}">
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <h1>Welcome to My Project</h1>
+    </header>
+
+    <!-- Navbar -->
+    <nav>
+        <ul>
+            <li><a href="{% url 'homepage' %}">Home</a></li>
+            <li><a href="{% url 'leagues-home' %}">Leagues</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2025 My Project</p>
+    </footer>
+
+    <script src="{% static 'base_app/js/script.js' %}"></script>
+</body>
+</html>
