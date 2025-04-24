@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,8 +15,8 @@
     <!-- Navbar -->
     <nav>
         <ul>
-            <li><a href="{% url 'app1-home' %}">Home</a></li>
-            <li><a href="{% url 'app2-page' %}">Leagues</a></li>
+            <li><a href="{% url 'homepage' %}">Home</a></li>
+            <li><a href="{% url 'leagues-home' %}">Leagues</a></li>
         </ul>
     </nav>
 
