@@ -35,3 +35,5 @@ Thumbs.db
 # Ignore Django files
 sqlite3
 *.sqlite3
+notebooks/
+*migrations/

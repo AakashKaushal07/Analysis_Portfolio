@@ -52,7 +52,7 @@ class Season(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['competition', 'year'],
+                fields=['competition', 'name'],
                 name='unique_season_key'
             )
         ]
