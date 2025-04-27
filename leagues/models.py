@@ -1,5 +1,4 @@
 from django.db import models
-
 class Competition(models.Model):
     CONFEDERATION_CHOICES = [
         ('AFC', 'AFC'), # (Stored in DB, Displayed in Admin)
@@ -24,7 +23,13 @@ class Competition(models.Model):
         (11, 'November'),
         (12, 'December'),
     ]
-    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['confederation', 'country', 'competition_name'],
+                name='unique_competition_key'
+            )
+        ]
     # geographical information
     confederation = models.CharField(max_length=10, choices=CONFEDERATION_CHOICES)
     country = models.CharField(max_length=25, null=False, blank=False)
@@ -42,3 +47,21 @@ class Competition(models.Model):
 
     def __str__(self):
         return f"{self.competition_name} - {self.country}"
+
+class Season(models.Model):
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['competition', 'year'],
+                name='unique_season_key'
+            )
+        ]
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE)
+    name = models.CharField(max_length=25, null=False, blank=False)
+    
+    # competition information
+    season_event_url = models.URLField(null=True,blank=True,default="")
+    season_shot_url = models.URLField(null=True,blank=True,default="")
+    
+    def __str__(self):
+        return f"{self.competition.competition_name} - {self.names}"
