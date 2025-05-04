@@ -1,5 +1,4 @@
 from django.db import models
-
 class Competition(models.Model):
     CONFEDERATION_CHOICES = [
         ('AFC', 'AFC'), # (Stored in DB, Displayed in Admin)
@@ -24,13 +23,21 @@ class Competition(models.Model):
         (11, 'November'),
         (12, 'December'),
     ]
-    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['confederation', 'country', 'competition_name'],
+                name='unique_competition_key'
+            )
+        ]
     # geographical information
     confederation = models.CharField(max_length=10, choices=CONFEDERATION_CHOICES)
     country = models.CharField(max_length=25, null=False, blank=False)
     
     # competition information
     competition_name = models.CharField(max_length=30, null=False, blank=False)
+    name_scoresaway = models.CharField(max_length=30, null=False, blank=False)
+    name_fotmob = models.CharField(max_length=30, null=False, blank=False)
     competition_format = models.CharField(max_length=1, choices=[('L', 'League'), ('C', 'Cup'), ("H", "Hybrid")])
     competition_type = models.CharField(max_length=1, choices=[('D', 'Domestic'), ('I', 'International')])
     season_start = models.IntegerField(choices=MONTHS_CHOICES)
@@ -38,7 +45,34 @@ class Competition(models.Model):
     
     # data collection information
     event_data_available = models.BooleanField(max_length=1, default=True, choices=[(True, 'Yes'), (False, 'No')])
+    event_data_url = models.URLField(null=True, blank=True, default="")
     shot_data_available = models.BooleanField(max_length=1, default=False, choices=[(True, 'No'), (False, 'Yes')])
+    shot_data_url = models.URLField(null=True, blank=True, default="")
 
     def __str__(self):
         return f"{self.competition_name} - {self.country}"
+
+    def save(self, *args, **kwargs):
+        if not self.name_scoresaway:
+            self.name_scoresaway = self.competition_name
+        if not self.name_fotmob:
+            self.name_fotmob = self.competition_name
+        super().save(*args, **kwargs)
+    
+class Season(models.Model):
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['competition', 'name'],
+                name='unique_season_key'
+            )
+        ]
+    competition = models.ForeignKey(Competition, on_delete=models.CASCADE)
+    name = models.CharField(max_length=25, null=False, blank=False)
+    
+    # competition information
+    season_event_url = models.URLField(null=True,blank=True,default="")
+    season_shot_url = models.URLField(null=True,blank=True,default="")
+    
+    def __str__(self):
+        return f"{self.competition.competition_name} - {self.names}"
