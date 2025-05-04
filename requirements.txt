@@ -2,3 +2,8 @@ Django>=4.0
 requests
 pandas
 notebook
+BeautifulSoup4
+blinker==1.7.0
+selenium-wire
+selenium
+openpyxl
