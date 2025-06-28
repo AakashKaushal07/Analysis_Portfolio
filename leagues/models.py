@@ -63,16 +63,17 @@ class Season(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['competition', 'name'],
+                fields=['competition', 'name', 'name_fotmob'],
                 name='unique_season_key'
             )
         ]
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE)
     name = models.CharField(max_length=25, null=False, blank=False)
+    name_fotmob = models.CharField(max_length=25, null=False, blank=False)
     
     # competition information
     season_event_url = models.URLField(null=True,blank=True,default="")
     season_shot_url = models.URLField(null=True,blank=True,default="")
     
     def __str__(self):
-        return f"{self.competition.competition_name} - {self.names}"
+        return f"{self.competition.competition_name} - {self.name} - FM({self.name_fotmob})"
