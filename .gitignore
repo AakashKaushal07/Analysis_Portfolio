@@ -35,5 +35,5 @@ Thumbs.db
 # Ignore Django files
 sqlite3
 *.sqlite3
-notebooks/
+notebooks/.ipynb_checkpoints
 *migrations/
