@@ -1,11 +1,11 @@
 from django.db import models
 from leagues.models import Season
-class Season(models.Model):
+class Game(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=['season', 'home_team', 'away_team'],
-                name='unique_season_key'
+                name='unique_game_key'
             )
         ]
     season = models.ForeignKey(Season, on_delete=models.CASCADE)
@@ -26,5 +26,10 @@ class Season(models.Model):
         blank=False
     )
     
+    game_event_url = models.URLField(null=True,blank=True,default="")
+    game_shot_url = models.URLField(null=True,blank=True,default="")
+    
     def __str__(self):
-        return f"{self.competition.competition_name} - {self.name} - FM({self.name_fotmob})"
+        if self.season.name == self.season.name_fotmob:
+            return f"{self.season.competition.competition_name} : ({self.season.name}) - {self.home_team} vs {self.away_team} | {self.event_status}"
+        return f"{self.season.competition.competition_name} : ({self.season.name} | {self.season.name_fotmob}) - {self.home_team} vs {self.away_team} | {self.event_status}"
