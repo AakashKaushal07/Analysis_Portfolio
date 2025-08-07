@@ -142,3 +142,7 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # 1 hour
     'REFRESH_TOKEN_LIFETIME': timedelta(days=5),  # (optional) defaults to 1 day
 }
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
+    ]
+}
