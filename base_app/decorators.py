@@ -1,6 +1,6 @@
 import functools
 import traceback
-import sys
+import sys,os,time
 
 def catch_iteration_errors(func):
     """
@@ -31,3 +31,71 @@ def catch_iteration_errors(func):
             print(f'{"-|"*15}-')
             
     return wrapper
+
+def cleanup_selenium_instances(func):
+    """
+    A decorator to kill all chromedriver instances after a function executes.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            # Execute the decorated function
+            return func(*args, **kwargs)
+        finally:
+            # This block will run no matter what happens in the try block
+            print("\n--- Cleaning up all Selenium chromedriver instances... ---")
+            
+            # Use the appropriate command based on the operating system
+            if sys.platform.startswith("win"):
+                # Windows command
+                os.system("taskkill /F /IM chromedriver.exe /T")
+            else:
+                # macOS and Linux command
+                os.system("killall chromedriver")
+                
+            print("--- Cleanup complete. ---")
+            
+    return wrapper
+
+def timed_retry(max_retries: int):
+    """
+    A decorator that retries a function with a specific delay schedule if it fails.
+    
+    Args:
+        max_retries (int): The maximum number of times to retry the function.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Define the specific delay schedule in seconds
+            delays = [2, 3, 10, 25]
+            
+            # The initial attempt + the number of retries
+            for attempt in range(max_retries):
+                try:
+                    # Attempt to run the function
+                    # print(f"Attempt {attempt + 1}/{max_retries + 1}...")
+                    result = func(*args, **kwargs)
+                    # print("✅ Function succeeded!")
+                    return result
+                except Exception as e:
+                    # If the function fails
+                    print(f"❌ Attempt {attempt + 1} failed: {e}")
+                    
+                    # Check if we have more retries left
+                    if attempt < max_retries:
+                        # Determine the sleep time
+                        if attempt < len(delays):
+                            sleep_time = delays[attempt]
+                        else:
+                            # For the 5th failure and onwards, wait 60s
+                            sleep_time = 60
+                        
+                        print(f"Retrying in {sleep_time} seconds...")
+                        time.sleep(sleep_time)
+                    else:
+                        # If all retries are exhausted, raise the last exception
+                        print("All retries failed. Raising the last exception.")
+                        raise e
+        return wrapper
+    return decorator
