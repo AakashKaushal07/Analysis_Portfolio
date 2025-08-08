@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import LeagueLookupSerializer,SeasonLookupSerializer
-import from .utils as utils
+# from .utils as utils
 
 def games_page(request):
     return render(request, 'games/games.html')
@@ -20,4 +20,5 @@ class get_game_url(APIView):
         if not season_serializer.is_valid(): ## Error case
             return Response(season_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         season_info = season_serializer.validated_data
+        ## TODO :  Complete this after creating a proper format. Fill up games so that There is something to show for.
         return Response(season_serializer.validated_data, status=status.HTTP_410_GONE)
