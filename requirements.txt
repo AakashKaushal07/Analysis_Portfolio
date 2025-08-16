@@ -11,4 +11,7 @@ djangorestframework
 markdown
 django-filter
 djangorestframework-simplejwt
-
+fuzzywuzzy
+python-Levenshtein
+matplotlib
+unidecode
