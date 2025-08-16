@@ -1,6 +1,11 @@
 import functools
+import linecache
 import traceback
 import sys,os,time
+import shutil
+import tempfile
+from functools import wraps
+import psutil  # to check if process still running
 
 def catch_iteration_errors(func):
     """
@@ -52,11 +57,26 @@ def cleanup_selenium_instances(func):
             else:
                 # macOS and Linux command
                 os.system("killall chromedriver")
-                
+            print("\n--- Cleaning up all Selenium & chromedriver cache ... ---")
+            # print("\n--- Avoiding. Will run in one off case. Just uncomment ---")
+            # cleanup_cache()
             print("--- Cleanup complete. ---")
             
     return wrapper
 
+def cleanup_cache():
+    temp_dir = tempfile.gettempdir()
+
+    # Remove Selenium Wire cache
+    sw_cache = os.path.join(temp_dir, "seleniumwire")
+    if os.path.exists(sw_cache):
+        shutil.rmtree(sw_cache, ignore_errors=True)
+
+    # Remove ChromeDriver's temp profiles (scoped_dir_*)
+    for item in os.listdir(temp_dir):
+        if item.startswith("scoped_dir"):
+            shutil.rmtree(os.path.join(temp_dir, item), ignore_errors=True)
+    
 def timed_retry(max_retries: int):
     """
     A decorator that retries a function with a specific delay schedule if it fails.
@@ -81,7 +101,16 @@ def timed_retry(max_retries: int):
                 except Exception as e:
                     # If the function fails
                     print(f"❌ Attempt {attempt + 1} failed: {e}")
-                    
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                    lineno = exc_tb.tb_lineno
+                    code_line = linecache.getline(exc_tb.tb_frame.f_code.co_filename, lineno).strip()
+                
+                    print("Exception:", e)
+                    print("Type     :", exc_type.__name__)
+                    print("File     :", fname)
+                    print("Line No  :", lineno)
+                    print("Code     :", code_line)
                     # Check if we have more retries left
                     if attempt < max_retries:
                         # Determine the sleep time

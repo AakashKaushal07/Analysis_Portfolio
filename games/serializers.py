@@ -35,7 +35,6 @@ class SeasonLookupSerializer(serializers.Serializer):
             if match:
                 year = match.group("year")
                 stage = match.group("stage").strip() if match.group("stage") else None
-                print(f"Year: {year}, Stage: {stage}")
                 try :
                     yr_dt = (datetime.strptime(yr_name, "%Y") for yr_name in year.split(r"/"))
                 except Exception as e:
