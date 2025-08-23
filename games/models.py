@@ -4,7 +4,7 @@ class Game(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['season', 'home_team', 'away_team'],
+                fields=['season', 'home_team', 'away_team','match_date'],
                 name='unique_game_key'
             )
         ]
