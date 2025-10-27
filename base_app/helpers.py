@@ -45,56 +45,55 @@ def get_name_mappings(source="SA",target="N",source_as_file_names=False,target_a
             
     return mappings
 
-def acronym(name: str) -> str:
-    tokens = name.lower().split()
-    return "".join(t[0] for t in tokens if t)
-
-def normalize_team(name: str) -> str:
+# Internal: normalize a team name (accents, lowercase, separators → spaces)
+def _normalize_team(name: str) -> str:
     name = unidecode(name).lower().strip()
-    # Replace common non-alphanumeric separators with spaces
     name = re.sub(r'[^a-z0-9]+', ' ', name)
     return name
 
-def best_fuzzy_match(team_name, choices, threshold_single=90, threshold_multi=75, mapping=TEAM_MAPPING):
-    q = normalize_team(team_name)
-    q_tokens = q.split()
+# Internal: compute acronym from team name
+def _acronym(name: str) -> str:
+    tokens = name.split()
+    return "".join(t[0] for t in tokens if t)
+
+# Public function
+def best_fuzzy_match(team_name, choices, threshold_single=90, threshold_multi=75):
+    q_norm = _normalize_team(team_name)
+    q_tokens = q_norm.split()
     single_word = len(q_tokens) == 1
-    q_acr = acronym(q)
+    q_acr = _acronym(q_norm)
+
+    # Normalize mapping bidirectionally
+    normalized_mapping = {}
+    for k, v in TEAM_MAPPING.items():
+        k_norm = _normalize_team(k)
+        v_norm = _normalize_team(v)
+        normalized_mapping[k_norm] = v_norm
+        normalized_mapping[v_norm] = k_norm  # bidirectional
+
     results = {}
-
-    # Prepare reverse mapping for bidirectional matching
-    reverse_mapping = {}
-    if mapping:
-        for k, v in mapping.items():
-            reverse_mapping[v.lower()] = k.lower()
-
     for choice in choices:
-        c = normalize_team(choice)
-        c_acr = acronym(c)
+        c_norm = _normalize_team(choice)
+        c_acr = _acronym(c_norm)
         score = 0
 
-        # Check mapping first (bidirectional)
-        if mapping:
-            if q in mapping and mapping[q].lower() == c:
+        # Mapping check (bidirectional)
+        for map_key, map_val in normalized_mapping.items():
+            if (q_norm == map_key and c_norm == map_val) or (q_norm == map_val and c_norm == map_key):
                 score = 100
-            elif c in mapping and mapping[c].lower() == q:
-                score = 100
-            elif q in reverse_mapping and reverse_mapping[q] == c:
-                score = 100
-            elif c in reverse_mapping and reverse_mapping[c] == q:
-                score = 100
+                break
 
-        # Normal scoring if mapping didn't match
+        # Regular fuzzy scoring if mapping didn't match
         if score == 0:
-            ts = fuzz.token_set_ratio(q, c)
-            tsort = fuzz.token_sort_ratio(q, c)
-            pr = fuzz.partial_ratio(q, c)
+            ts = fuzz.token_set_ratio(q_norm, c_norm)
+            tsort = fuzz.token_sort_ratio(q_norm, c_norm)
+            pr = fuzz.partial_ratio(q_norm, c_norm)
             score = max(ts, tsort, pr)
 
-            # Acronym matching logic
+            # Acronym logic
             acr_score = 0
-            if (len(q) <= 4 and q.isalpha()):  
-                if q == c_acr:
+            if len(q_norm) <= 4 and q_norm.isalpha():
+                if q_norm == c_acr:
                     acr_score = 100
             else:
                 if q_acr == c_acr and len(c_acr) <= 4:
@@ -108,7 +107,9 @@ def best_fuzzy_match(team_name, choices, threshold_single=90, threshold_multi=75
         else:
             if score >= threshold_multi:
                 results[choice] = score
-
+    # print("results : ",results)
+    # print(team_name,"score : ",score)
+    
     return dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
 
 __all__ = ["best_fuzzy_match","get_name_mappings","fetch_configurations"]
