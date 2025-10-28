@@ -15,7 +15,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--input', '-i', type=str, required=True,
+            '--input', '-i', type=str, required=False,default="",
             help='File which has info of the actions to run.'
         )
         parser.add_argument(
@@ -39,17 +39,24 @@ class Command(BaseCommand):
         try :
             if '.csv' in input :
                 df = pd.read_csv(input)
+                q = Q()
+                for _, row in df.iterrows():
+                    q |= (
+                        Q(competition__confederation=row["confederation"], competition__country=row["region"],competition__competition_name=row['competition_alt']) &
+                        (Q(name=row["season"]) | Q(name_fotmob=row["season"]))
+                    )
+                qs = Season.objects.select_related("competition").filter(q)
             elif '.xlsx' in input : 
                 df = pd.read_excel(input)
+                q = Q()
+                for _, row in df.iterrows():
+                    q |= (
+                        Q(competition__confederation=row["confederation"], competition__country=row["region"],competition__competition_name=row['competition_alt']) &
+                        (Q(name=row["season"]) | Q(name_fotmob=row["season"]))
+                    )
+                qs = Season.objects.select_related("competition").filter(q)
             else:
-                raise Exception("Only allowed ifles are .xlsx or .csv")
-            q = Q()
-            for _, row in df.iterrows():
-                q |= (
-                    Q(competition__confederation=row["confederation"], competition__country=row["region"],competition__competition_name=row['competition_alt']) &
-                    (Q(name=row["season"]) | Q(name_fotmob=row["season"]))
-                )
-            qs = Season.objects.select_related("competition").filter(q)
+                qs = Season.objects.select_related("competition").filter(competition__shot_data_url__isnull=False).exclude(competition__shot_data_url="")
         except Exception as e :
             print(e)
             return 

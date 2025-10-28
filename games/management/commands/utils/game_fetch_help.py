@@ -1109,68 +1109,6 @@ def get_shot_links_only(worker_id,s_id):
         finally:
             driver.quit()  # This runs automatically when the block is exited
     
-    @timed_retry(3)
-    def remove_cookie_dialog(driver):
-        try:
-            sleep(5)
-            # accept_button = inner_wait.until(EC.element_to_be_clickable((By.ID, "onetrust-banner-sdk")))
-            driver.execute_script("var obj = document.getElementById('onetrust-banner-sdk');if(obj){obj.remove()};")
-            cookie = driver.find_element(By.CSS_SELECTOR, '#onetrust-banner-sdk')
-            if cookie:
-                raise Exception("Cookie banner not deleted. Retry ..")
-        except NoSuchElementException as e :
-            pass
-
-    def random_wait(logger,min_s=3, max_s=14):
-        wait_time = round(random.uniform(min_s, max_s), 2)
-        logger.info(f"Waiting for {wait_time} seconds...")
-        sleep(wait_time)
-
-    def graceful_click_by_index(logger, driver, locator, index, max_retries=3):
-        """
-        Finds a list of elements, clicks one by its index, and retries on protocol error.
-
-        :param driver: The WebDriver instance.
-        :param locator: A tuple (By, "value") for the list of elements.
-        :param index: The index of the element to click in the list.
-        :param max_retries: The maximum number of times to retry upon failure.
-        :return: True if the click was successful, False otherwise.
-        """
-        for attempt in range(max_retries):
-            try:
-                # 1. Wait for the list of elements to be present
-                elements = WebDriverWait(driver, 60).until(
-                    EC.presence_of_all_elements_located(locator)
-                )
-                # 2. Check if the index is valid
-                if index >= len(elements):
-                    logger.info(f"Error: Index {index} is out of bounds for list of size {len(elements)}.")
-                    return False
-
-                # 3. Get the specific element and click it
-
-                item = elements[index]
-                clicker = item.find_element(By.CSS_SELECTOR, 'td.Opta-Divider.Opta-Dash[title="View match"]')
-                driver.execute_script("arguments[0].click();", clicker)
-                # element_to_click = elements[index]
-                # element_to_click.click()
-
-                logger.info(f"Successfully clicked element at index {index}.")
-                return True # Exit function on success
-
-            except WebDriverException as e:
-                # 4. If a protocol error occurs, reload and prepare to retry
-                if "ERR_HTTP2_PROTOCOL_ERROR" in str(e):
-                    logger.info(f"Attempt {attempt + 1}/{max_retries}: Protocol error detected. Reloading page...")
-                    driver.refresh()
-                else:
-                    # For other errors, log it and fail immediately
-                    logger.info(f"An unhandled WebDriver error occurred: {e.__class__.__name__}")
-                    return False
-
-        logger.info(f"Failed to click element at index {index} after {max_retries} attempts.")
-        return False
-
     # @cleanup_selenium_instances
     def get_shot_url_games_of_season(logger,event_driver,season):
         try:
@@ -1274,7 +1212,7 @@ def get_shot_links_only(worker_id,s_id):
             name = f"{str(season).replace('/','_').replace(' ','_')}"
             cache_dir = None
             
-            BASE_META_DATA = r"D:/MetaData"
+            BASE_META_DATA = r"D:/MetaData-shot"
             os.makedirs("D:/alt_cache",exist_ok=True)
             cache_dir = tempfile.mkdtemp(prefix=f"selenium_cache_worker_{i}_", dir="D:/alt_cache")
             os.makedirs(cache_dir,exist_ok=True)
@@ -1293,11 +1231,8 @@ def get_shot_links_only(worker_id,s_id):
             name_fm = season.competition.name_fotmob
             
             shot_url = season.season_shot_url
-            
             st_driver = None
-            
-            print(f"Starting with {conf} - {country} - {name_fm} - {s_name_fm}")
-        
+                    
             if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
                 print("Screw Current Season ... ",s_name_fm,s_name_sa)
                 print()
@@ -1307,7 +1242,7 @@ def get_shot_links_only(worker_id,s_id):
             ## Make Directories
             logger = get_logger(name)
             logger.info(f"{'-'*7} START OF LOG {'-'*7}")
-            
+            logger.info(f"Starting with {conf} - {country} - {name_fm} - {s_name_fm}")
             os.makedirs(BASE_META_DATA, exist_ok=True)
             os.makedirs(f"{BASE_META_DATA}/{conf}", exist_ok=True)
             os.makedirs(f"{BASE_META_DATA}/{conf}/{country}", exist_ok=True)
@@ -1321,20 +1256,17 @@ def get_shot_links_only(worker_id,s_id):
                     return
 
                 url = shot_url
+                logger.info(f"Hitting URL : {url}")
                 if 'overview' in url and "fotmob" in url :
                     url = url.replace("/overview/","/matches/")
-                st_driver = get_driver(cache_dir)
                 with safe_driver(cache_dir) as st_driver : 
                     st_driver.get(url)
-
                     status,match_data = get_shot_url_games_of_season(logger,st_driver,season)
                     if status is False :
-
                         logger.info("*"*15)
                         logger.info("Failed Somewhere for : ")
                         logger.info(shot_path)
                         logger.info("*"*15)
-
                         return
 
                     parsed_matches = parse_fotmob_matches(logger,match_data.get('matches',{}).get('allMatches',[]),season)
@@ -1342,8 +1274,6 @@ def get_shot_links_only(worker_id,s_id):
                         pd.DataFrame(parsed_matches).to_excel(shot_path,index=False)
                     logger.info(f"'{shot_path}' is created successfully.")
 
-            print(f"Done with with {conf} - {country} - {name_fm} - {s_name_fm} /n")
-            print()
             logger.info(f"{'-'*7} END OF LOG {'-'*7}")
         except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
