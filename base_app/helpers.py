@@ -66,23 +66,30 @@ def best_fuzzy_match(team_name, choices, threshold_single=90, threshold_multi=75
     # Normalize mapping bidirectionally
     normalized_mapping = {}
     for k, v in TEAM_MAPPING.items():
+        # k_norm = _normalize_team(k)
+        # v_norm = _normalize_team(v)
+        # normalized_mapping[k_norm] = v_norm
+        # normalized_mapping[v_norm] = k_norm  # bidirectional
         k_norm = _normalize_team(k)
-        v_norm = _normalize_team(v)
-        normalized_mapping[k_norm] = v_norm
-        normalized_mapping[v_norm] = k_norm  # bidirectional
-
+        # v_norm = [_normalize_team(v)
+        normalized_mapping[k_norm] = [_normalize_team(x) for x in v]
+        # normalized_mapping[v_norm] = k_norm  # bidirectional
+        for x in v :
+            normalized_mapping[_normalize_team(x)] = k_norm
+    
     results = {}
     for choice in choices:
         c_norm = _normalize_team(choice)
         c_acr = _acronym(c_norm)
         score = 0
-
         # Mapping check (bidirectional)
         for map_key, map_val in normalized_mapping.items():
             if (q_norm == map_key and c_norm == map_val) or (q_norm == map_val and c_norm == map_key):
-                score = 100
+                score = 101
                 break
-
+            if c_norm in normalized_mapping.get(q_norm,[]):
+                score=102
+                break
         # Regular fuzzy scoring if mapping didn't match
         if score == 0:
             ts = fuzz.token_set_ratio(q_norm, c_norm)
