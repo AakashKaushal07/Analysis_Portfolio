@@ -68,7 +68,8 @@ def season_link_maker(worker_id,s_id) :
         try:
             yield driver  # Yield the driver to be used in the 'with' block
         finally:
-            driver.quit()  # This runs automatically when the block is exited
+            if driver :
+                driver.quit()  # This runs automatically when the block is exited
     
     @timed_retry(3)
     def remove_cookie_dialog(driver):
@@ -135,6 +136,9 @@ def season_link_maker(worker_id,s_id) :
     def is_fixture_present_already(logger, driver, locator, index,norm_teams,df) :
         if df is None:
             logger.info("DF is none check why")
+        if df.empty :
+            logger.info("No File is there. hence returning false")
+            return False # Returning False so that I can pull fixture
         try:
             # 0. Prepare DF with normalized values
             df['norm_home_team'] = [unidecode(x).lower() for x in df['home_team']]
@@ -401,11 +405,15 @@ def season_link_maker(worker_id,s_id) :
 
                 temp['away_team'] = match.get('away',{}).get('name',"")
                 temp['away_score'] = match.get('status',{}).get('scoreStr',"").split("-")[-1].strip(" ")
-
-                temp['datetime'] = datetime.strptime(match.get('status',{}).get('utcTime',""),"%Y-%m-%dT%H:%M:%SZ")
+                time_str = match.get('status',{}).get('utcTime',"")
+                if "Z" in time_str :
+                    time_str = time_str.replace("Z","")
+                if "." in time_str :
+                    time_str = time_str.split('.')[0]
+                
+                temp['datetime'] = datetime.strptime(time_str,"%Y-%m-%dT%H:%M:%S")
                 temp['shot_url'] = base_url+match.get('pageUrl')
                 coll.append(temp)
-            return coll
         except Exception as e :
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
@@ -420,10 +428,11 @@ def season_link_maker(worker_id,s_id) :
             File         => {fname}
             Line No      => {lineno}
             Code         => {code_line}
+            Item         => {match}
             {'-'*10}
             """
             logger.error(error_msg)
-            return []
+        return coll
 
     def fetch_data_and_save_locally(i,season_id):
         import django
@@ -440,6 +449,7 @@ def season_link_maker(worker_id,s_id) :
             cache_dir = None
             
             BASE_META_DATA = r"D:/MetaData"
+            BASE_META_DATA_SHOT = r"D:/MetaData-shot"
             os.makedirs("D:/alt_cache",exist_ok=True)
             cache_dir = tempfile.mkdtemp(prefix=f"selenium_cache_worker_{i}_", dir="D:/alt_cache")
             os.makedirs(cache_dir,exist_ok=True)
@@ -467,20 +477,19 @@ def season_link_maker(worker_id,s_id) :
             
             print(f"Starting with {conf} - {country} - {s_name_fm}")
         
-            if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
-                print("Screw Current Season ... ",s_name_fm,s_name_sa)
-                print()
-                
-                return
 
             ## Make Directories
             logger = get_logger(name)
             logger.info(f"{'-'*7} START OF LOG {'-'*7}")
             
             os.makedirs(BASE_META_DATA, exist_ok=True)
+            os.makedirs(BASE_META_DATA_SHOT, exist_ok=True)
             os.makedirs(f"{BASE_META_DATA}/{conf}", exist_ok=True)
             os.makedirs(f"{BASE_META_DATA}/{conf}/{country}", exist_ok=True)
             season_path = f"{BASE_META_DATA}/{conf}/{country}"
+            os.makedirs(f"{BASE_META_DATA_SHOT}/{conf}", exist_ok=True)
+            os.makedirs(f"{BASE_META_DATA_SHOT}/{conf}/{country}", exist_ok=True)
+            season_path_shot = f"{BASE_META_DATA_SHOT}/{conf}/{country}"
 
             if event_url :
                 if event_url.split("/")[-1] == 'fixtures':
@@ -492,28 +501,27 @@ def season_link_maker(worker_id,s_id) :
                 if os.path.exists(event_path):
                     logger.info(f"'{ev_file}' present already. Using that to compare items ...")
                     ev_df = pd.read_excel(event_path)
-
-                # ev_driver = get_driver(cache_dir)
-                # ev_driver.get(event_url)
+                    ev_df = ev_df.drop_duplicates(subset=['home_team','away_team','datetime'])
                 with safe_driver(cache_dir) as ev_driver :
                     ev_driver.get(event_url)
                     event_data = get_event_url_games_of_season(logger,ev_driver,season,ev_df)
                     if event_data:
                         new_df = pd.DataFrame(event_data)
                         merged_df = pd.concat([ev_df, new_df],axis=0,join="inner")
+                        merged_df = merged_df.drop_duplicates(subset=['home_team','away_team','datetime'])
                         merged_df.to_excel(event_path,index=False)
                         logger.info(f"'{event_path}' is created.")
-            print(f"Done with with {conf} - {country} - {s_name_fm} /n")    
+            logger.info(f"Done with with Events of {conf} - {country} - {s_name_fm} /n")    
             if shot_url :
+                logger.info("Checking with Event url")
                 st_file = f'{name_fm.replace(" ","_").replace(".","")}_{s_name_fm.replace("/","_").replace(" - ","_").replace(" ","_").replace("-","_")}_shots.xlsx'
-                shot_path = f"{season_path}/{st_file}"
+                shot_path = f"{season_path_shot}/{st_file}"
                 if os.path.exists(shot_path):
                     logger.info(f"'{st_file}' present already. Skipping ...")
                     return
                 url = shot_url
                 if 'overview' in url and "fotmob" in url :
                     url = url.replace("/overview/","/matches/")
-                st_driver = get_driver(cache_dir)
                 with safe_driver(cache_dir) as st_driver : 
                     st_driver.get(url)
 
@@ -526,13 +534,19 @@ def season_link_maker(worker_id,s_id) :
                         logger.info("*"*15)
 
                         return
-
-                    parsed_matches = parse_fotmob_matches(logger,match_data.get('matches',{}).get('allMatches',[]),season)
+                    raw_match_data = match_data.get('matches',{}).get('allMatches',[])
+                    if raw_match_data == [] :
+                        raw_match_data = match_data.get('fixtures',{}).get('allMatches',[])
+                    parsed_matches = parse_fotmob_matches(logger,raw_match_data,season)
                     if parsed_matches :
                         pd.DataFrame(parsed_matches).to_excel(shot_path,index=False)
-                    logger.info(f"'{shot_path}' is created successfully.")
-
-            print(f"Done with with {conf} - {country} - {name_fm} - {s_name_fm} /n")
+                        logger.info(f"'{shot_path}' is created successfully.")
+                        
+                    else:
+                        logger.info(f"No Parsed matches found | {len(raw_match_data)}")
+            else:
+                logger.info("No shot url present. Chill bro")
+            print(f"Done with with Shots of {conf} - {country} - {name_fm} - {s_name_fm} /n")
             print()
             logger.info(f"{'-'*7} END OF LOG {'-'*7}")
         except Exception as e:
@@ -955,11 +969,11 @@ def get_event_links_only(worker_id,s_id):
             
             print(f"Starting with {conf} - {country} - {s_name_fm}")
         
-            if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
-                print("Screw Current Season ... ",s_name_fm,s_name_sa)
-                print()
+            # if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
+            #     print("Screw Current Season ... ",s_name_fm,s_name_sa)
+            #     print()
                 
-                return
+            #     return
 
             ## Make Directories
             logger = get_logger(name)
@@ -1233,11 +1247,11 @@ def get_shot_links_only(worker_id,s_id):
             shot_url = season.season_shot_url
             st_driver = None
                     
-            if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
-                print("Screw Current Season ... ",s_name_fm,s_name_sa)
-                print()
+            # if "26" in s_name_fm or "26" in s_name_sa or "2025" == s_name_sa[:4] or "2025" == s_name_fm[:4]:
+            #     print("Screw Current Season ... ",s_name_fm,s_name_sa)
+            #     print()
                 
-                return
+            #     return
 
             ## Make Directories
             logger = get_logger(name)
