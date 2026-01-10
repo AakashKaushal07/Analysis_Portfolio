@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "games",
     "rest_framework",
     'rest_framework_simplejwt',
+    'mailer',
 ]
 
 MIDDLEWARE = [
