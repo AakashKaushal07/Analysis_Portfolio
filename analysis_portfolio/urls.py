@@ -26,4 +26,5 @@ urlpatterns = [
     path('', include('base_app.urls')),  # Updated base_app
     path('leagues/', include('leagues.urls')),  # Updated leagues
     path('games/', include('games.urls')),  # Updated games
+    path('mailer/', include('mailer.urls')),  # Updated mailers
 ]
