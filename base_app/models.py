@@ -9,7 +9,7 @@ class ConfigItems(models.Model):
         return f"{self.key} : {self.value}"
 
 class OptaEvents(models.Model):
-    opta_id = models.TextField(unique=True)
+    opta_id = models.IntegerField(unique=True)
     event_name = models.TextField()
     description = models.TextField()
     
@@ -17,7 +17,7 @@ class OptaEvents(models.Model):
         return f"{self.event_name} : {self.opta_id}"
 
 class OptaQualifier(models.Model):
-    opta_id = models.TextField(unique=True)
+    opta_id = models.IntegerField(unique=True)
     qualifier_name = models.TextField()
     description = models.TextField()
     
