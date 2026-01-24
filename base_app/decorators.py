@@ -5,6 +5,7 @@ import sys,os,time
 import shutil
 import tempfile
 from functools import wraps
+from helpers.log_exception import log_exception
 import psutil  # to check if process still running
 
 def catch_iteration_errors(func):
@@ -126,5 +127,29 @@ def timed_retry(max_retries: int):
                         # If all retries are exhausted, raise the last exception
                         print("All retries failed. Raising the last exception.")
                         raise e
+        return wrapper
+    return decorator
+
+
+
+
+def exception_logger(logger=None, re_raise=True, full_traceback=True):
+    """
+    Decorator to log exceptions with detailed info using log_exception.
+
+    Parameters:
+        logger          : optional logger object (must have .error method)
+        re_raise        : whether to re-raise the exception after logging
+        full_traceback  : whether to include full traceback
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                log_exception(e, logger=logger, full_traceback=full_traceback)
+                if re_raise:
+                    raise
         return wrapper
     return decorator
