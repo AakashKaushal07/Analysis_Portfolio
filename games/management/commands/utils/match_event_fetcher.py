@@ -22,12 +22,14 @@ from unidecode import unidecode
 
 
 class MatchEventFetcher:
-    def __init__(self,cache_dir):
+    def __init__(self,cache_dir,season_id):
         configs = {item.key : item.value for item in ConfigItems.objects.all()}
+        self.season_id = season_id
+        self.season = Season.objects.select_related('competition').get(id=self.season_id)
         self.temp_cache_location = configs.get("SELENIUM_CACHE_LOCATION")
         self.base_save_location = configs.get("PREPARED_EVENT_PATH")
         self.cache_dir = cache_dir # From the function it needs to be called with mktemp directory
-        self.logger = get_logger(self.__class__.__name__+"__TEST",log_dir="D:/Match_Fetching_Logs")
+        self.logger = get_logger(f"{season_id}__TEST",log_dir="D:/Match_Fetching_Logs")
         self.opta_events = OptaEvents.objects.all().values()
         self.opta_qualifiers = OptaQualifier.objects.all().values()
 
@@ -370,13 +372,13 @@ class MatchEventFetcher:
         os.makedirs(f"{self.base_save_location}/{conf}/{country}/{comp_name}/{s_name}", exist_ok=True)
         return f"{self.base_save_location}/{conf}/{country}/{comp_name}/{s_name}"
     
-    def fetch_game_data_for_the_season(self,season_id):
+    def fetch_game_data_for_the_season(self):
         try:
             tracker,error_items = None,None
             self.logger.info("Starting to fetch the event dataframe..")
-            season = Season.objects.select_related('competition').get(id=season_id)
-            self.logger.info(f"Working in {season.competition.competition_name} - {season.name_fotmob}")
-            stats = Game.objects.filter(season_id=season_id,event_status='not_done').aggregate(
+            # season = Season.objects.select_related('competition').get(id=self.season_id)
+            self.logger.info(f"Working in {self.season.competition.competition_name} - {self.season.name_fotmob}")
+            stats = Game.objects.filter(season_id=self.season_id,event_status='not_done').aggregate(
                 total_event_matches=Count(
                     'id',
                     filter=Q(game_event_url__isnull=False) & ~Q(game_event_url='')
@@ -387,11 +389,12 @@ class MatchEventFetcher:
                 ),
             )
 
-            all_games_of_season = Game.objects.filter(season_id=season_id,event_status='not_done',id=18622).select_related('season__competition').values('game_event_url','game_shot_url','id')
-            self.logger.info(f"Found {stats.get('total_event_matches',-1)} matches with events and {stats.get('total_shot_matches',-1)} matches with shots to be pulled")
+            all_games_of_season = Game.objects.filter(season_id=self.season_id,event_status='not_done').select_related('season__competition').values('game_event_url','game_shot_url','id')
+            game_count = len(all_games_of_season)
+            self.logger.info(f"Found {stats.get('total_event_matches',-1)} matches with events and {stats.get('total_shot_matches',-1)} matches with shots to be pulled | Total Items : {game_count}")
             tracker = {
-                "competition": season.competition.competition_name,
-                "name": season.name,
+                "competition": self.season.competition.competition_name,
+                "name": self.season.name,
                 "event_matches_pulled": 0,
                 "event_matches_transformed": 0,
                 "shot_matches_pulled": 0,
@@ -404,8 +407,9 @@ class MatchEventFetcher:
             
             error_items = []
             
-            save_file_path = self.__get_path_to_save_df(season)
-            for game in all_games_of_season :
+            save_file_path = self.__get_path_to_save_df(self.season)
+            for i,game in enumerate(all_games_of_season) :
+                self.logger.info(f'WORKING ON {i}/{game_count} ...')
                 # Initialization of possible variables
                 fotmob_shots, fotmob_momentum = [],[]
                 prepared_dataframe = None
@@ -432,6 +436,7 @@ class MatchEventFetcher:
                     )
                     self.logger.error(f"Issue in STEP 1 for '{game.get('id')}': {exc}")
                     continue
+                
                 try:
                     events = self.__parse_event_body(event_body)
                     tracker['event_matches_transformed']+=1
@@ -445,6 +450,7 @@ class MatchEventFetcher:
                     )
                     self.logger.error(f"Issue in STEP 2 for '{game.get('id')}: {exc}")
                     continue   
+                
                 try:
                     msg = "Proceeding to fetch shot and momentum data ..." if game.get('game_shot_url','') != '' else "No FotMob URL found. Skipping further processes."
                     self.logger.info(msg)
@@ -453,8 +459,7 @@ class MatchEventFetcher:
                     if bool(fotmob_shots) is False and bool(fotmob_momentum) is False :
                         self.logger.info(f"Alas, we tried to fetch shot and moemntum data but we got | shots = {bool(fotmob_shots)} ; momentum{bool(fotmob_momentum)}. Since both are flase, no need to go for a merge")
                     else:
-                        tracker['shot_matches_pulled']+=1
-                        
+                        tracker['shot_matches_pulled']+=1                 
                 except Exception as e :
                     exc = log_exception(e)
                     error_items.append({
@@ -500,6 +505,8 @@ class MatchEventFetcher:
                     self.logger.error(f"Issue in STEP 5 for '{game.get('id')}: {exc}")
                     continue
             
+                self.logger.info(f'DONE WITH {i}/{game_count} ...')
+                
         except Exception as e:
             exc = log_exception(e)
             self.logger.error(f"Uncaught Issue : {exc}")
