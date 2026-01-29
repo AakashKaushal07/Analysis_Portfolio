@@ -62,11 +62,7 @@ class Command(BaseCommand):
                 f"Completed processing {len(overall_result)} season(s)"
             )
         )
-
-        return overall_result
-        
-        
-        # season_id = 216
-        # cache_dir = tempfile.mkdtemp(prefix=f"Tempu__", dir="D:/alt_cache")
-        # obj = MatchEventFetcher(cache_dir)
-        # tracker,error_items=obj.fetch_game_data_for_the_season(season_id) 
+        with open("Sample Response.txt","w") as f :
+            f.write(str(overall_result))
+        # return overall_result
+        ## Save Overall data in a text file for now, then on mail
