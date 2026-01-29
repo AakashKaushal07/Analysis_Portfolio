@@ -1,3 +1,4 @@
+import logging
 from .models import ConfigItems
 from leagues.models import Competition
 from .TEAM_MAP import  TEAM_MAPPING
@@ -156,4 +157,45 @@ def log_exception(e: Exception, logger=None, full_traceback=True):
     else:
         print(msg)
 
-__all__ = ["best_fuzzy_match","get_name_mappings","fetch_configurations","log_exception"]
+def get_logger(name, log_dir="D:/runtime_logs"):
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{name}.log")
+        lgr = logging.getLogger(name)
+        lgr.setLevel(logging.INFO)
+        
+        if not lgr.handlers:
+            fh = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+            fh.setLevel(logging.INFO)
+            formatter = logging.Formatter(
+                fmt="%(asctime)s [%(processName)s] %(levelname)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            
+            fh.setFormatter(formatter)
+            lgr.addHandler(fh)
+
+        return lgr
+
+def enable_fullsize_notebook():
+    from IPython.display import display, HTML
+
+    return display(HTML("""
+    <style>
+    /* main notebook area */
+    .jp-Notebook {
+        max-width: 90% !important;
+    }
+
+    /* individual cells */
+    .jp-Cell {
+        max-width: 90% !important;
+    }
+
+    /* input/output areas */
+    .jp-InputArea,
+    .jp-OutputArea {
+        max-width: 90% !important;
+    }
+    </style>
+    """))
+__all__ = ["best_fuzzy_match","get_name_mappings","fetch_configurations","log_exception","enable_fullsize_notebook"]
