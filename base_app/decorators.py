@@ -5,38 +5,49 @@ import sys,os,time
 import shutil
 import tempfile
 from functools import wraps
-from helpers.log_exception import log_exception
+from base_app.helpers import log_exception
 import psutil  # to check if process still running
+
+import functools
+import sys
+import traceback
 
 def catch_iteration_errors(func):
     """
-    Decorator to catch and report errors inside a loop iteration.
-    Assumes the function being decorated accepts an 'index' argument.
+    Decorator to catch and display errors inside a loop iteration.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Try to extract 'index' from args or kwargs
-        index = kwargs.get('index', None)
-        if index is None and len(args) > 0:
-            index = args[0]  # assumes index is the first positional argument
+        index = kwargs.get("index")
+
+        # fallback: find first int-like positional arg
+        if index is None:
+            for arg in args:
+                if isinstance(arg, int):
+                    index = arg
+                    break
 
         try:
             return func(*args, **kwargs)
-        except Exception as e:
-            tb = traceback.extract_tb(sys.exc_info()[2])[-1]
-            lineno = tb.lineno
-            error_line = tb.line
-            print(f"❌ Error in iteration {index}: {e}")
-            print(f" ❌ Line number: {lineno}")
-            print(f" ❌Error line: {error_line}")
+        except Exception:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            tb = traceback.extract_tb(exc_tb)
+            last = tb[-1] if tb else None
+
+            print(f"\n❌ Error in iteration {index}")
+            print(f"❌ Exception: {exc_value}")
+
+            if last:
+                print(f"❌ Line number: {last.lineno}")
+                print(f"❌ Error line: {last.line}")
+
             print("    Closing any open connections...")
-            try:
-                driver.quit()
-            except Exception as e:
-                pass
-            print(f'{"-|"*15}-')
-            
+
+            print(f'{"-|" * 15}-\n')
+            raise   # keep original traceback
+
     return wrapper
+
 
 def cleanup_selenium_instances(func):
     """
