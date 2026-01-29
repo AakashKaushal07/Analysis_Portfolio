@@ -732,6 +732,10 @@ def get_event_links_only(worker_id,s_id):
     def is_fixture_present_already(logger, driver, locator, index,norm_teams,df) :
         if df is None:
             logger.info("DF is none check why")
+        if df.empty:
+            logger.info("DF is empty , no neeed to check ahead")
+            return False # returning true because false mean to pull fixture
+        
         try:
             # 0. Prepare DF with normalized values
             df['norm_home_team'] = [unidecode(x).lower() for x in df['home_team']]
@@ -880,6 +884,7 @@ def get_event_links_only(worker_id,s_id):
                             result_urls = result_urls[0]
                             temp['event_url'] = result_urls
                             mw_data.append(temp)
+                            logger.info("Item Appended to mw_data")
                         else:
                             logger.info(f"No Valid link found for {temp['home_team']} v {temp['away_team']}")
                     else :
@@ -925,9 +930,6 @@ def get_event_links_only(worker_id,s_id):
             logger.info(f"File     : {fname}")
             logger.info(f"Line No  : {lineno}")
             logger.info(f"Code     : {code_line}")
-        finally:
-            if inner_driver:
-                inner_driver.quit()
         return mw_data
 
     def fetch_data_and_save_locally(i,season_id):
@@ -1004,6 +1006,8 @@ def get_event_links_only(worker_id,s_id):
                         merged_df = pd.concat([ev_df, new_df],axis=0,join="inner")
                         merged_df.to_excel(event_path,index=False)
                         logger.info(f"'{event_path}' is created.")
+                    else:
+                        logger.info(f"Event_Data : {event_data}")
             print(f"Done with with {conf} - {country} - {s_name_fm} /n")
             print()
             logger.info(f"{'-'*7} END OF LOG {'-'*7}")
@@ -1188,8 +1192,11 @@ def get_shot_links_only(worker_id,s_id):
 
                 temp['away_team'] = match.get('away',{}).get('name',"")
                 temp['away_score'] = match.get('status',{}).get('scoreStr',"").split("-")[-1].strip(" ")
-
-                temp['datetime'] = datetime.strptime(match.get('status',{}).get('utcTime',""),"%Y-%m-%dT%H:%M:%SZ")
+                
+                dt_format = "%Y-%m-%dT%H:%M:%SZ"
+                if '.' in match.get('status',{}).get('utcTime',"") :
+                    dt_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+                temp['datetime'] = datetime.strptime(match.get('status',{}).get('utcTime',""),dt_format)
                 temp['shot_url'] = base_url+match.get('pageUrl')
                 coll.append(temp)
             return coll
@@ -1282,11 +1289,17 @@ def get_shot_links_only(worker_id,s_id):
                         logger.info(shot_path)
                         logger.info("*"*15)
                         return
-
-                    parsed_matches = parse_fotmob_matches(logger,match_data.get('matches',{}).get('allMatches',[]),season)
+                    preset_data = match_data.get('matches',{}).get('allMatches',[])
+                    if bool(preset_data) is False :
+                        preset_data = match_data.get('fixtures',{}).get('allMatches',[])
+                    parsed_matches = parse_fotmob_matches(logger,preset_data,season)
                     if parsed_matches :
                         pd.DataFrame(parsed_matches).to_excel(shot_path,index=False)
-                    logger.info(f"'{shot_path}' is created successfully.")
+                        logger.info(f"'{shot_path}' is created successfully.")
+                    else :
+                        logger.info(parsed_matches)
+                        logger.info(status)
+                        logger.info(match_data)
 
             logger.info(f"{'-'*7} END OF LOG {'-'*7}")
         except Exception as e:
