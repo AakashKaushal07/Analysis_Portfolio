@@ -1,4 +1,5 @@
 from datetime import datetime
+import random
 from base_app.models import ConfigItems,OptaEvents,OptaQualifier
 from leagues.models import Season
 from games.models import Game
@@ -22,14 +23,11 @@ from unidecode import unidecode
 
 
 class MatchEventFetcher:
-    def __init__(self,cache_dir,season_id):
-        configs = {item.key : item.value for item in ConfigItems.objects.all()}
-        self.season_id = season_id
-        self.season = Season.objects.select_related('competition').get(id=self.season_id)
-        self.temp_cache_location = configs.get("SELENIUM_CACHE_LOCATION")
-        self.base_save_location = configs.get("PREPARED_EVENT_PATH")
+    def __init__(self,cache_dir,s_id,game_id):
+        self.game_id = game_id
+        self.temp_cache_location = ConfigItems.objects.get(key="SELENIUM_CACHE_LOCATION").value
         self.cache_dir = cache_dir # From the function it needs to be called with mktemp directory
-        self.logger = get_logger(f"{season_id}__TEST",log_dir="D:/Match_Fetching_Logs")
+        self.logger = get_logger(f"Game__{game_id}",log_dir=f"D:/Match_Fetching_Logs/{s_id}")
         self.opta_events = OptaEvents.objects.all().values()
         self.opta_qualifiers = OptaQualifier.objects.all().values()
 
@@ -45,6 +43,8 @@ class MatchEventFetcher:
         options.add_argument(f"--user-data-dir={self.cache_dir}")
         options.add_argument(f"--disk-cache-dir={os.path.join(self.cache_dir, 'cache')}")
         options.add_argument("--disk-cache-size=104857600")  # 100 MB
+        options.add_argument("--start-minimized")
+
         driver = webdriver.Chrome(options=options)
         # logger.info("Returning Driver")
         return driver  
@@ -58,29 +58,63 @@ class MatchEventFetcher:
             if driver :
                 driver.quit()  # This runs automatically when the block is exited
     
+    def __random_wait(self,min_s=12, max_s=22):
+        wait_time = round(random.uniform(min_s, max_s), 2)
+        self.logger.info(f"Waiting for {wait_time} seconds...")
+        sleep(wait_time)
+        
     def __fetch_event_api_response(self,url) :
+        event_data_body = None
         with self.__safe_driver() as event_driver : 
+            done_with_it = False
+            attempt=1
             self.logger.info("Created a safe driver.")
-            event_driver.get(url)
-            self.logger.info("Waiting for 30s to make sure all APIs are completed execution.")
-            sleep(10)
-            for request in event_driver.requests:
-                try:
-                    if "soccerdata/matchevent" in request.url :
-                        self.logger.info(f"Found the Correct API link : '{request.url}'")
+            while done_with_it is False:
+                try : 
+                    self.logger.info(f"Beginning attempt {attempt}/3 ...")
+                    event_driver.get(url)
+                    self.logger.info("Waiting to make sure all APIs are completed execution.")
+                    self.__random_wait(min_s=12,max_s=25)
 
-                        if b'\x1f\x8b' in request.response.body[:2]:  # type: ignore # GZIP magic number
-                            self.logger.info(f"Found data in gzip with gzip magic number.")
-                            body = gzip.decompress(request.response.body) # type: ignore
-                            
-                        else:  # Assume Deflate
-                            body= zlib.decompress(request.response.body, wbits=zlib.MAX_WBITS | 32)   # type: ignore
-                            self.logger.info(f"Found data in zlib deflate.")
-                                              
-                        return eval(body.decode().split('(')[-1][:-1])
-                except Exception as e:
-                    self.logger.error(f"Issue while fetching event data : {log_exception(e)}")
-    
+                except WebDriverException as e:
+                    if attempt > 3 :
+                        self.logger.error("multiple retries are done. Screw it RITP")
+                    elif "ERR_HTTP2_PROTOCOL_ERROR" in str(e):
+                        self.logger.info(f"Attempt {attempt}/3: Protocol error detected. Reloading page...")
+                        event_driver.refresh()
+                        attempt+=1
+                for request in event_driver.requests:
+                    try:
+                        if "soccerdata/matchevent" in request.url :
+                            self.logger.info(f"Found the Correct API link : '{request.url}'")
+
+                            if b'\x1f\x8b' in request.response.body[:2]:  # type: ignore # GZIP magic number
+                                self.logger.info(f"Found data in gzip with gzip magic number.")
+                                body = gzip.decompress(request.response.body) # type: ignore
+                                
+                            else:  # Assume Deflate
+                                body= zlib.decompress(request.response.body, wbits=zlib.MAX_WBITS | 32)   # type: ignore
+                                self.logger.info(f"Found data in zlib deflate.")
+                                                
+                            payload = body.decode() # type: ignore
+                            payload = payload[payload.find("(") + 1 : payload.rfind(")")]
+                            if payload : 
+                                event_data_body = json.loads(payload)
+                                self.logger.info("Found the required event data")
+                                done_with_it = True
+                                break
+                                # return json.loads(payload)
+                    except Exception as e:
+                        self.logger.error(f"Issue while fetching event data : {log_exception(e)}")
+                        event_driver.refresh()
+                if done_with_it :
+                    break
+                self.logger.info(f"Unable to find data in {attempt}/3 attempt ")
+                if attempt > 3:
+                    done_with_it = True
+                attempt+=1
+        return event_data_body   
+
     def __return_event_data_and_description(self,row,source_df) :
         current_type_id = row.typeId
         working_area_type = source_df[source_df['typeId'] == current_type_id][['event_name','description']]
@@ -157,17 +191,17 @@ class MatchEventFetcher:
                     if name == 'pass end x' :
                         events_df.at[i,'end_x'] = float(qualifier.get('value',-1.0)) # type: ignore
                     if name == 'pass end y' :
-                        events_df.at[i,'end_y'] = float(qualifier.get('value',-1.0))
+                        events_df.at[i,'end_y'] = float(qualifier.get('value',-1.0))# type: ignore
                     if name == 'goal mouth y co-ordinate' :
-                        events_df.at[i,'goal_mouth_y'] = float(qualifier.get('value',-1.0))
+                        events_df.at[i,'goal_mouth_y'] = float(qualifier.get('value',-1.0)) # type: ignore
                     if name == 'goal mouth z co-ordinate' :
-                        events_df.at[i,'goal_mouth_z'] = float(qualifier.get('value',-1.0))
+                        events_df.at[i,'goal_mouth_z'] = float(qualifier.get('value',-1.0))# type: ignore
                     if name == 'big chance' :
-                        events_df.at[i,'big_chance'] = True
+                        events_df.at[i,'big_chance'] = True # type: ignore
                     if name == 'own goal' :
-                        events_df.at[i,'own_goal'] = True
+                        events_df.at[i,'own_goal'] = True # type: ignore
                     if name == 'zone' :
-                        events_df.at[i,'zone'] = qualifier.get('value') if qualifier.get('value') else "NA"
+                        events_df.at[i,'zone'] = qualifier.get('value') if qualifier.get('value') else "NA" # type: ignore
             
             # Replace Period Names
             events_df['period'] = events_df["period"].replace({
@@ -182,38 +216,62 @@ class MatchEventFetcher:
             self.logger.error(f"Error While parsing events : {log_exception(e)}")
 
     def __fetch_shot_api_response(self,url) : 
+        shot_data_body = None
         with self.__safe_driver() as event_driver : 
+            done_with_it = False
+            attempt=1
             self.logger.info("Created a safe driver.")
-            event_driver.get(url)
-            self.logger.info("Waiting for 10s to make sure all APIs are completed execution.")
-            sleep(10)
-            for request in event_driver.requests:
+            while done_with_it is False:
                 try:
-                    if "matchDetails?" in request.url :# \
-                        self.logger.info(f"Found the info containing API call : '{request.url}'")
-                        encoding = request.response.headers.get('Content-Encoding')
-                        self.logger.info(f"Encoding in the request is : '{encoding}'")
-                        body = request.response.body
-                        if encoding == 'gzip':
-                            decompressed = gzip.GzipFile(fileobj=BytesIO(body)).read()
-                            body = decompressed.decode('utf-8')
-                    
-                        elif encoding == 'br':  # Brotli
-                            decompressed = brotli.decompress(body)
-                            body = decompressed.decode('utf-8')
-                    
-                        elif encoding == 'deflate':
-                            decompressed = zlib.decompress(body)
-                            body = decompressed.decode('utf-8')
-                        else:
-                            try:
-                                body = body.decode('utf-8')
-                            except UnicodeDecodeError:
-                                self.logger.info("UTF-8 decode failed, printing raw bytes")
-                        return json.loads(body)       
-                except Exception as e:
-                    self.logger.error(f"Issue while fetching shot data : {log_exception(e)}")
-        
+                    self.logger.info(f"Beginning attempt {attempt}/3 ...")
+                    event_driver.get(url)
+                    self.logger.info("Waiting for 15s to make sure all APIs are completed execution.")
+                    self.__random_wait(min_s=12,max_s=25)
+                except WebDriverException as e:
+                    if attempt > 3 :
+                        self.logger.error("multiple retries are done. Screw it RITP")
+                    elif "ERR_HTTP2_PROTOCOL_ERROR" in str(e):
+                        self.logger.info(f"Attempt {attempt}/3: Protocol error detected. Reloading page...")
+                        event_driver.refresh()
+                        attempt+=1
+                for request in event_driver.requests:
+                    try:
+                        if "matchDetails?" in request.url and 'ccode' not in request.url :# \
+                            self.logger.info(f"Found the info containing API call : '{request.url}'")
+                            encoding = request.response.headers.get('Content-Encoding')
+                            self.logger.info(f"Encoding in the request is : '{encoding}'")
+                            body = request.response.body
+                            if encoding == 'gzip':
+                                decompressed = gzip.GzipFile(fileobj=BytesIO(body)).read()
+                                body = decompressed.decode('utf-8')
+                        
+                            elif encoding == 'br':  # Brotli
+                                decompressed = brotli.decompress(body)
+                                body = decompressed.decode('utf-8')
+                        
+                            elif encoding == 'deflate':
+                                decompressed = zlib.decompress(body)
+                                body = decompressed.decode('utf-8')
+                            else:
+                                try:
+                                    body = body.decode('utf-8')
+                                except UnicodeDecodeError:
+                                    self.logger.info("UTF-8 decode failed, printing raw bytes")
+                            shot_data_body = json.loads(body)   
+                            if bool(shot_data_body) : 
+                                done_with_it=True
+                                break                           
+                            # return json.loads(body)                              
+                    except Exception as e:
+                        self.logger.error(f"Issue while fetching shot data : {log_exception(e)}")
+                if done_with_it :
+                    break
+                self.logger.info(f"Unable to find data in {attempt}/3 attempt ")
+                if attempt > 3  or shot_data_body is not None:
+                    done_with_it = True
+                attempt+=1
+        return shot_data_body   
+    
     def __parse_shot_api_response(self,url):
         shot_info = self.__fetch_shot_api_response(url)
         
@@ -358,158 +416,155 @@ class MatchEventFetcher:
         else:
             self.logger.info(f"No Momentum Data is seen so avoiding the blowup. {shot_info}")
         return events
-    
-    def __get_path_to_save_df(self,season):
-        s_name = season.name.replace("/","-").replace(" ","_")
-        conf = season.competition.confederation.replace("/","-").replace(" ","_")
-        country = season.competition.country.replace("/","-").replace(" ","_")
-        comp_name = season.competition.competition_name.replace("/","-").replace(" ","_")
-        
-        os.makedirs(f"{self.base_save_location}", exist_ok=True)
-        os.makedirs(f"{self.base_save_location}/{conf}", exist_ok=True)
-        os.makedirs(f"{self.base_save_location}/{conf}/{country}", exist_ok=True)
-        os.makedirs(f"{self.base_save_location}/{conf}/{country}/{comp_name}", exist_ok=True)
-        os.makedirs(f"{self.base_save_location}/{conf}/{country}/{comp_name}/{s_name}", exist_ok=True)
-        return f"{self.base_save_location}/{conf}/{country}/{comp_name}/{s_name}"
-    
-    def fetch_game_data_for_the_season(self):
+ 
+    def fetch_game_data_for_the_season(self,save_file_path):
         try:
-            tracker,error_items = None,None
-            self.logger.info("Starting to fetch the event dataframe..")
-            # season = Season.objects.select_related('competition').get(id=self.season_id)
-            self.logger.info(f"Working in {self.season.competition.competition_name} - {self.season.name_fotmob}")
-            stats = Game.objects.filter(season_id=self.season_id,event_status='not_done').aggregate(
-                total_event_matches=Count(
-                    'id',
-                    filter=Q(game_event_url__isnull=False) & ~Q(game_event_url='')
-                ),
-                total_shot_matches=Count(
-                    'id',
-                    filter=Q(game_shot_url__isnull=False) & ~Q(game_shot_url='')
-                ),
-            )
-
-            all_games_of_season = Game.objects.filter(season_id=self.season_id,event_status='not_done').select_related('season__competition').values('game_event_url','game_shot_url','id')
-            game_count = len(all_games_of_season)
-            self.logger.info(f"Found {stats.get('total_event_matches',-1)} matches with events and {stats.get('total_shot_matches',-1)} matches with shots to be pulled | Total Items : {game_count}")
+            game = Game.objects.get(id=self.game_id)
             tracker = {
-                "competition": self.season.competition.competition_name,
-                "name": self.season.name,
                 "event_matches_pulled": 0,
                 "event_matches_transformed": 0,
                 "shot_matches_pulled": 0,
                 "merge_successes": 0,
                 "merge_failure": 0,
                 'save_success':0,
-                'save_failure':0
+                'save_failure':0,
+                'item_mutate':0
             } 
-            tracker = {**tracker,**stats}
+            tracker = {**tracker}
+            error_items = {}
             
-            error_items = []
+            self.logger.info(f'Starting for : {str(game)}')
             
-            save_file_path = self.__get_path_to_save_df(self.season)
-            for i,game in enumerate(all_games_of_season) :
-                self.logger.info(f'WORKING ON {i}/{game_count} ...')
-                # Initialization of possible variables
-                fotmob_shots, fotmob_momentum = [],[]
-                prepared_dataframe = None
-                try:
-                    self.logger.info("STEP 1 : GET EVENT BODY")
-                    event_body = self.__fetch_event_api_response(game.get('game_event_url'))
-                    if not event_body:
-                        self.logger.error("We have not found any body here. Need to Look in this")
-                        error_items.append({
-                            "stage" : "Blank event body",
-                            "game_id" : game.get("id"),
-                            "error" : "Manual Check One off"
-                            }
-                        )
-                        continue
+            # Initialization of possible variables
+            fotmob_shots, fotmob_momentum = [],[]
+            prepared_dataframe = None
+            try:
+                self.logger.info("STEP 1 : GET EVENT BODY")
+                event_body = self.__fetch_event_api_response(game.game_event_url)
+                if not event_body:
+                    self.logger.error("We have not found any body here. Need to Look in this")
+                    error_items = {
+                        "stage" : "Blank event body",
+                        "game_id" : self.game_id,
+                        "error" : "Manual Check One off"
+                        }
+                    return tracker,error_items
+                else:
                     tracker['event_matches_pulled']+=1
-                except Exception as e :
-                    exc = log_exception(e)
-                    error_items.append({
-                        "stage" : "Get event body",
-                        "game_id" : game.get("id"),
-                        "error" : exc
-                        }
-                    )
-                    self.logger.error(f"Issue in STEP 1 for '{game.get('id')}': {exc}")
-                    continue
+            except Exception as e :
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Get event body",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
                 
-                try:
-                    events = self.__parse_event_body(event_body)
-                    tracker['event_matches_transformed']+=1
-                except Exception as e :
-                    exc = log_exception(e)
-                    error_items.append({
-                        "stage" : "Parse event body",
-                        "game_id" : game.get("id"),
-                        "error" : exc
-                        }
-                    )
-                    self.logger.error(f"Issue in STEP 2 for '{game.get('id')}: {exc}")
-                    continue   
-                
-                try:
-                    msg = "Proceeding to fetch shot and momentum data ..." if game.get('game_shot_url','') != '' else "No FotMob URL found. Skipping further processes."
-                    self.logger.info(msg)
-                    if game.get('game_shot_url',None):
-                        fotmob_shots, fotmob_momentum = self.__parse_shot_api_response(game.get('game_shot_url',None))
-                    if bool(fotmob_shots) is False and bool(fotmob_momentum) is False :
-                        self.logger.info(f"Alas, we tried to fetch shot and moemntum data but we got | shots = {bool(fotmob_shots)} ; momentum{bool(fotmob_momentum)}. Since both are flase, no need to go for a merge")
-                    else:
-                        tracker['shot_matches_pulled']+=1                 
-                except Exception as e :
-                    exc = log_exception(e)
-                    error_items.append({
-                        "stage" : "Fetch shots",
-                        "game_id" : game.get("id"),
-                        "error" : exc
-                        }
-                    )
-                    self.logger.error(f"Issue in STEP 3 for '{game.get('id')}: {exc}")
-                    continue
-                
-                try:
-                    if fotmob_momentum or fotmob_shots :
-                        prepared_dataframe = self.__merge_shots_and_momentum_with_event_data(events,fotmob_shots,fotmob_momentum)
-                        tracker['merge_successes']+=1
-                except Exception as e :
-                    exc = log_exception(e)
-                    error_items.append({
-                        "stage" : "Merge",
-                        "game_id" : game.get("id"),
-                        "error" : exc
-                        }
-                    )
-                    tracker['merge_failure']+=1
-                    self.logger.error(f"Issue in STEP 4 for '{game.get('id')}: {exc}")
-                    continue
-                
-                try:
-                    event_file_path = fr"{save_file_path}/{game.get('id')}.xlsx"
-                    self.logger.info(f"Saving the events to {event_file_path} ..")
-                    prepared_dataframe.to_excel(event_file_path,index=False)
-                    self.logger.info(f"Saved events externally to {event_file_path} .")
-                    tracker['save_success']+=1
-                except Exception as e :
-                    exc = log_exception(e)
-                    error_items.append({
-                        "stage" : "Save Externally",
-                        "game_id" : game.get("id"),
-                        "error" : exc
-                        }
-                    )
-                    tracker['save_failure']+=1
-                    self.logger.error(f"Issue in STEP 5 for '{game.get('id')}: {exc}")
-                    continue
+                self.logger.error(f"Issue in STEP 1 for '{self.game_id}': {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
             
-                self.logger.info(f'DONE WITH {i}/{game_count} ...')
+            try:
+                events = self.__parse_event_body(event_body)
+                tracker['event_matches_transformed']+=1
+            except Exception as e :
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Parse event body",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
                 
+                self.logger.error(f"Issue in STEP 2 for '{self.game_id}: {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
+            
+            try:
+                msg = "Proceeding to fetch shot and momentum data ..." if game.game_shot_url != '' else "No FotMob URL found. Skipping further processes."
+                self.logger.info(msg)
+                if game.game_shot_url:
+                    fotmob_shots, fotmob_momentum = self.__parse_shot_api_response(game.game_shot_url)
+                if bool(fotmob_shots) is False and bool(fotmob_momentum) is False :
+                    self.logger.info(f"Alas, we tried to fetch shot and moemntum data but we got | shots = {bool(fotmob_shots)} ; momentum = {bool(fotmob_momentum)}. Since both are FALSE, no need to go for a merge")
+                else:
+                    tracker['shot_matches_pulled']+=1                 
+            except Exception as e :
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Fetch shots",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
+                
+                self.logger.error(f"Issue in STEP 3 for '{self.game_id}: {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
+            
+            try:
+                if fotmob_momentum or fotmob_shots :
+                    events = self.__merge_shots_and_momentum_with_event_data(events,fotmob_shots,fotmob_momentum)
+                    tracker['merge_successes']+=1
+            except Exception as e :
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Merge",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
+                
+                tracker['merge_failure']+=1
+                self.logger.error(f"Issue in STEP 4 for '{self.game_id}: {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
+            
+            try:
+                event_file_path = fr"{save_file_path}/{self.game_id}.xlsx"
+                self.logger.info(f"Saving the events to {event_file_path} ..")
+                events.to_excel(event_file_path,index=False)
+                self.logger.info(f"Saved events externally to {event_file_path} .")
+                tracker['save_success']+=1
+            except Exception as e :
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Save Externally",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
+                
+                tracker['save_failure']+=1
+                self.logger.error(f"Issue in STEP 5 for '{self.game_id}: {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
+        
+            try:
+                game.event_status = 'completed'
+                game.save()
+                tracker['item_mutate']+=1
+                
+            except Exception as e:
+                exc = log_exception(e)
+                error_items = {
+                    "stage" : "Update Row",
+                    "game_id" : self.game_id,
+                    "error" : exc
+                    }
+                
+                tracker['item_mutate']+=1
+                self.logger.error(f"Issue in STEP 5 for '{self.game_id}: {exc}")
+                game.event_status = 'error'
+                game.save()
+                return tracker,error_items 
+            self.logger.info(f'Done With {game}')               
         except Exception as e:
             exc = log_exception(e)
             self.logger.error(f"Uncaught Issue : {exc}")
+            game.event_status = 'error'
+            game.save()
+                
         finally :
             return tracker,error_items        
         
