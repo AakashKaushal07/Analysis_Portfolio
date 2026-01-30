@@ -22,11 +22,7 @@ class Command(BaseCommand):
             help='Limit the number of seasons to process'
         )
 
-    def __fetch_recent_seasons(self):
-        pass
-
     def __get_recent_seasons_from_db(self) :
-        
         comps = Competition.objects.all()
         current_date = datetime.now().date()
         results = []
