@@ -155,7 +155,7 @@ def log_exception(e: Exception, logger=None, full_traceback=True):
     if logger and hasattr(logger, 'error'):
         logger.error(msg)
     else:
-        print(msg)
+        return msg
 
 def get_logger(name, log_dir="D:/runtime_logs"):
         os.makedirs(log_dir, exist_ok=True)
