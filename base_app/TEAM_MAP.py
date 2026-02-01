@@ -903,5 +903,36 @@ TEAM_MAPPING = {
     "Holstein Kiel"
   ],
   "Düsseldorfer TuS Fortuna 1895":[
-    "Fortuna Düsseldorf"]
+    "Fortuna Düsseldorf"
+    ],
+  "Volos New Football Club" : [
+    "NFC Volos"
+  ],
+  "Olympiakos CFP":[
+    "Olympiakos",
+    "Olympiacos"
+  ],
+  "University College Dublin FC":[
+    "UCD",
+    "University College Dublin"
+  ],
+  "FeralpiSalò Srl" : [
+    "Union Brescia"
+  ],
+  "FeralpiSalo Srl" : [
+    "Union Brescia",
+    "FeralpiSalo"
+  ],
+  "AS Reggina 1914 ASD" : [
+    "AS Reggina",
+    "Reggina",
+    "LFA Reggio Calabria"
+  ],
+  "Ars et Labor Ferrara" : [
+    "SPAL"
+  ],
+  "Real Racing Club" : [
+    "Racing Santander"
+  ]
+    
 }
