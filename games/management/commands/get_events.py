@@ -8,7 +8,7 @@ from .utils.match_event_fetcher import MatchEventFetcher
 from leagues.models import Season
 from games.models import Game
 
-import tempfile,os
+import tempfile,os,json
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import time
@@ -147,7 +147,8 @@ class Command(BaseCommand):
                     
             tracker['time_elapsed'] = time() - start      
             overall_result[str(sns)] ={'tracker' : tracker,'errors':error_items}
-            
+            with open(f"Response.json","w") as f :
+                f.write(json.dumps(overall_result))
         self.stdout.write(
             self.style.SUCCESS(
                 f"Completed processing {len(overall_result)} season(s)"

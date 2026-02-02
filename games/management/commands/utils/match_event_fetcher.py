@@ -77,10 +77,12 @@ class MatchEventFetcher:
                     self.__random_wait(min_s=12,max_s=25)
 
                 except WebDriverException as e:
-                    if attempt > 3 :
-                        self.logger.error("multiple retries are done. Screw it RITP")
-                    elif "ERR_HTTP2_PROTOCOL_ERROR" in str(e):
-                        self.logger.info(f"Attempt {attempt}/3: Protocol error detected. Reloading page...")
+                    if "ERR_HTTP2_PROTOCOL_ERROR" in str(e):
+                        self.logger.info(f"Failed Attempt | {attempt}/3: Protocol error detected. Reloading page...")
+                        event_driver.refresh()
+                        attempt+=1
+                except Exception as e:
+                        self.logger.info(f"Failed Attempt | {attempt}/3: Randome error detected. {e}...")
                         event_driver.refresh()
                         attempt+=1
                 for request in event_driver.requests:
@@ -280,7 +282,7 @@ class MatchEventFetcher:
         momentum = []
         if not shot_info :
             self.logger.error(f"Somehow shots_info is not found check into this with url = '{url}'") 
-            return False,"shot_info_not_found"
+            return None,None
      
         if shot_info.get('content',{}).get('shotmap',{}).get('shots',[]) == []:
             self.logger.error(f"No shot data found. content had keys : '{','.join(shot_info.get('content',{}).keys())}'")
@@ -336,15 +338,12 @@ class MatchEventFetcher:
             self.logger.error(f"Error while merging momentum: {e}")
             return events_df
     
-    def __parse_momentum_data(self,momentum_data,et_announcements):
+    def __parse_momentum_data(self,momentum_data,period_wise_minute):
         if not momentum_data:
             self.logger.error(f"Momentum info is invalid : {momentum_data}")
             return
-        if et_announcements.empty:
-            self.logger.error(f"Announcement info is empty : {et_announcements}")
-            return
-        if 'qualifier' not in et_announcements.columns:
-            self.logger.error(f"Qualifier data not found : {et_announcements.columns}")
+        if not period_wise_minute:
+            self.logger.error(f"Announcement info is empty : {period_wise_minute}")
             return
         self.logger.info("Parsing momentum data for use ..")
         result = {
@@ -378,8 +377,8 @@ class MatchEventFetcher:
                 else :
                     continue
                 
-                et_time = int(et_announcements.loc[period,'qualifier'][0].get('value',0)) if len(et_announcements.loc[period,'qualifier']) == 1 else -120
-                et_dict = {int(item['minute'])+i : momentum_value for i in range(1,et_time+2)}
+                et_dict = {i:momentum_value for i in period_wise_minute[period] if i >= int(item['minute'])}
+                # et_dict = {int(item['minute'])+i : momentum_value for i in range(1,et_time+2)}
                 result[period] = {**result.get(period),**et_dict}  
         
         lookup = (
@@ -407,8 +406,10 @@ class MatchEventFetcher:
             self.logger.info(f"No Shot Data is seen so avoiding the blowup. {shot_info}")
         
         if momentum_info :
-            announcements = events[events['event_type'] == 'Injury Time Announcement'][['period','qualifier']].set_index('period')
-            parsed_momentum = self.__parse_momentum_data(momentum_info,announcements)
+            period_wise_minutes = (events.groupby('period')['minute']
+                                    .unique().apply(list).to_dict()
+                                    )
+            parsed_momentum = self.__parse_momentum_data(momentum_info,period_wise_minutes)
             self.logger.info("Parsed momentum data !")
             # merge momentum
             events = self.__merge_momentum_data(parsed_momentum,events)
@@ -437,7 +438,6 @@ class MatchEventFetcher:
             
             # Initialization of possible variables
             fotmob_shots, fotmob_momentum = [],[]
-            prepared_dataframe = None
             try:
                 self.logger.info("STEP 1 : GET EVENT BODY")
                 event_body = self.__fetch_event_api_response(game.game_event_url)
