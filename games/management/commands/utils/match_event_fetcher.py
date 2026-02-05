@@ -56,8 +56,10 @@ class MatchEventFetcher:
             yield driver  # Yield the driver to be used in the 'with' block
         finally:
             if driver :
+                sleep(1)
                 driver.quit()  # This runs automatically when the block is exited
-    
+                sleep(1)
+
     def __random_wait(self,min_s=12, max_s=22):
         wait_time = round(random.uniform(min_s, max_s), 2)
         self.logger.info(f"Waiting for {wait_time} seconds...")
@@ -72,6 +74,7 @@ class MatchEventFetcher:
             while done_with_it is False:
                 try : 
                     self.logger.info(f"Beginning attempt {attempt}/3 ...")
+                    self.logger.info(f"Fetching URL : = '{url}'")
                     event_driver.get(url)
                     self.logger.info("Waiting to make sure all APIs are completed execution.")
                     self.__random_wait(min_s=12,max_s=25)
@@ -111,7 +114,8 @@ class MatchEventFetcher:
                         event_driver.refresh()
                 if done_with_it :
                     break
-                self.logger.info(f"Unable to find data in {attempt}/3 attempt ")
+                self.logger.info(f"Unable to find data in {attempt}/3 attempt | Scanned items {len(event_driver.requests)} ")
+                self.__random_wait(3,7)
                 if attempt > 3:
                     done_with_it = True
                 attempt+=1
@@ -226,6 +230,7 @@ class MatchEventFetcher:
             while done_with_it is False:
                 try:
                     self.logger.info(f"Beginning attempt {attempt}/3 ...")
+                    self.logger.info(f"Fetching URL : = '{url}'")
                     event_driver.get(url)
                     self.logger.info("Waiting for 15s to make sure all APIs are completed execution.")
                     self.__random_wait(min_s=12,max_s=25)
@@ -269,6 +274,7 @@ class MatchEventFetcher:
                 if done_with_it :
                     break
                 self.logger.info(f"Unable to find data in {attempt}/3 attempt ")
+                self.__random_wait(3,7)
                 if attempt > 3  or shot_data_body is not None:
                     done_with_it = True
                 attempt+=1
@@ -421,6 +427,7 @@ class MatchEventFetcher:
     def fetch_game_data_for_the_season(self,save_file_path):
         try:
             game = Game.objects.get(id=self.game_id)
+            event_status = {"id" : self.game_id,"status" : "error"}
             tracker = {
                 "event_matches_pulled": 0,
                 "event_matches_transformed": 0,
@@ -458,11 +465,7 @@ class MatchEventFetcher:
                     "game_id" : self.game_id,
                     "error" : exc
                     }
-                
                 self.logger.error(f"Issue in STEP 1 for '{self.game_id}': {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
             
             try:
                 events = self.__parse_event_body(event_body)
@@ -476,9 +479,6 @@ class MatchEventFetcher:
                     }
                 
                 self.logger.error(f"Issue in STEP 2 for '{self.game_id}: {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
             
             try:
                 msg = "Proceeding to fetch shot and momentum data ..." if game.game_shot_url != '' else "No FotMob URL found. Skipping further processes."
@@ -498,9 +498,6 @@ class MatchEventFetcher:
                     }
                 
                 self.logger.error(f"Issue in STEP 3 for '{self.game_id}: {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
             
             try:
                 if fotmob_momentum or fotmob_shots :
@@ -516,9 +513,6 @@ class MatchEventFetcher:
                 
                 tracker['merge_failure']+=1
                 self.logger.error(f"Issue in STEP 4 for '{self.game_id}: {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
             
             try:
                 event_file_path = fr"{save_file_path}/{self.game_id}.xlsx"
@@ -536,37 +530,14 @@ class MatchEventFetcher:
                 
                 tracker['save_failure']+=1
                 self.logger.error(f"Issue in STEP 5 for '{self.game_id}: {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
-        
-            try:
-                game.event_status = 'completed'
-                game.save()
-                tracker['item_mutate']+=1
-                
-            except Exception as e:
-                exc = log_exception(e)
-                error_items = {
-                    "stage" : "Update Row",
-                    "game_id" : self.game_id,
-                    "error" : exc
-                    }
-                
-                tracker['item_mutate']+=1
-                self.logger.error(f"Issue in STEP 5 for '{self.game_id}: {exc}")
-                game.event_status = 'error'
-                game.save()
-                return tracker,error_items 
-            self.logger.info(f'Done With {game}')               
+
+            event_status['status'] = 'completed'
+            self.logger.info(f'Done With {game}')
         except Exception as e:
             exc = log_exception(e)
             self.logger.error(f"Uncaught Issue : {exc}")
-            game.event_status = 'error'
-            game.save()
-                
         finally :
-            return tracker,error_items        
+            return tracker,error_items,event_status   
         
 ######## LOCAL TEST
 # season_id = 293

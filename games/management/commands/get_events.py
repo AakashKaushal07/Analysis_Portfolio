@@ -4,7 +4,8 @@ from django.db.models import Count, Q
 
 from base_app.models import ConfigItems
 
-from .utils.match_event_fetcher import MatchEventFetcher
+# from .utils.match_event_fetcher import MatchEventFetcher
+from .utils.worker_module import process_season_worker
 from leagues.models import Season
 from games.models import Game
 
@@ -46,18 +47,18 @@ class Command(BaseCommand):
         os.makedirs(f"{base_save_location}/{conf}/{country}/{comp_name}/{s_name}", exist_ok=True)
         return f"{base_save_location}/{conf}/{country}/{comp_name}/{s_name}"
    
-    def _process_season(self, season_id, game_id,save_path):
-            close_old_connections()
+    # def _process_season(self, season_id, game_id,save_path):
+    #         close_old_connections()
+            
+    #         cache_dir = tempfile.mkdtemp(
+    #             prefix=f"Season_{season_id}__{game_id}__",
+    #             dir="D:/alt_cache",
+    #         )
 
-            cache_dir = tempfile.mkdtemp(
-                prefix=f"Season_{season_id}__{game_id}__",
-                dir="D:/alt_cache",
-            )
+    #         fetcher = MatchEventFetcher(cache_dir,season_id,game_id)
+    #         tracker, error_items,status = fetcher.fetch_game_data_for_the_season(save_path)
 
-            fetcher = MatchEventFetcher(cache_dir,season_id,game_id)
-            tracker, error_items = fetcher.fetch_game_data_for_the_season(save_path)
-
-            return tracker, error_items
+    #         return tracker, error_items,status
 
     def handle(self, *args, **options):
         
@@ -91,7 +92,8 @@ class Command(BaseCommand):
             seasons = Season.objects.select_related("competition").filter(q)
         else:
             seasons = Season.objects.all()  # expand this later if needed
-            
+        # TEST ONLY
+        # seasons = seasons[14:]   
         if limit:
             seasons = seasons[:limit]
 
@@ -128,12 +130,16 @@ class Command(BaseCommand):
             save_path = self.__get_path_to_save_df(sns)
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = [
-                    executor.submit(self._process_season,sns.id,game_id,save_path) # type: ignore
+                    executor.submit(process_season_worker,sns.id,game_id,save_path) # type: ignore
                     for game_id in game_ids
                 ]
                 
                 for future in as_completed(futures):
-                    trk, err = future.result()
+                    trk, err, status = future.result()
+                    try :
+                        Game.objects.filter(id=status.get('id','')).update(event_status = status.get('status','error'))
+                    except Exception as e :
+                        print(f"Exception for {status} | {e}")
                     if err != {}: 
                         error_items.append(err) 
                     tracker["event_matches_pulled"] += trk.get("event_matches_pulled",0)
@@ -149,11 +155,11 @@ class Command(BaseCommand):
             overall_result[str(sns)] ={'tracker' : tracker,'errors':error_items}
             with open(f"Response.json","w") as f :
                 f.write(json.dumps(overall_result))
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Completed processing {len(overall_result)} season(s)"
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Completed processing {str(sns)} season(s)"
+                )
             )
-        )
         with open("Sample Response.txt","w") as f :
             f.write(str(overall_result))
         # return overall_result
